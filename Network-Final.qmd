@@ -1,0 +1,373 @@
+---
+title: "The Not-so Small World of Donald Trump"
+author: "Quinn He"
+desription: "Networks final project"
+date: "05/20/2023"
+format:
+  html:
+    toc: true
+    code-fold: true
+    code-copy: true
+    code-tools: true
+categories:
+ - Final Project
+---
+
+```{r include=FALSE}
+#| label: setup
+#| warning: false
+
+library(tidyverse)
+library(statnet)
+library(igraph)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Overview
+
+Rarely are US Presidents as connected both in the public and private sectors as was Donald Trump. When leaders have this many friends in high places, it can lead to more senior level government positions filled due more to nepotism than the right person for the job. The purpose of this project is to visualize where Trump's political and business relationships lie, but to also observe one step further and look at who his friends are friends with and see how densely connected the senior government members are.  
+
+How does this impact their policy making? How much does a powerful person benefit from having friends in high places? The goal of this project is to not only observe how connected Trump and his businesses are to high level officials and business moguls, but how connected were his cabinet members to private sector organizations or other individuals. I will observe who the most central nodes are in this network. My main question is who is the second most central node? Trump will obviously be the most, but who finds them self the second?
+
+The data set came from Buzzfeed News and was built from news articles, public records, and other sources that detailed Trump's connections and contacts. The data set is not fully complete, but it is extensive and will provide sufficient for my work on the final project.
+
+A node in this data is a person or organization. A tie in this network mostly consists of a business connection like ownership or membership of a company. There are also familial ties and donor ties. The business ties vary greatly with consultant, ex CEO, subsidiary, etc. Ties can be found in the "tie_connection" column.
+
+##Data set read in
+
+```{r include=FALSE}
+
+trump <-read_csv("TrumpWorld_data.csv")
+
+trump <- trump %>% 
+  rename(
+    entity_a = "Entity A",
+    entity_b = "Entity B",
+    entity_a_type = "Entity A Type",
+    entity_b_type = "Entity B Type",
+    tie_connection = "Connection"
+  )
+
+#Reorder the columns 
+trump <- trump[, c(2,4,1,3,5)] 
+
+```
+
+Here we can get a brief look at what the data set looks like before turning it into an igraph object.
+```{r}
+head(trump)
+```
+
+I want to turn the trump csv into a data frame that can be read by igraph and then by statnet so I have the freedom to use both packages if needed. The network is undirected because business relationships go both ways, unless there is money involved.
+
+```{r}
+#Turn into a matrix
+trump.mat <- data.matrix(trump)
+
+#Turn into statnet object
+trump.net <- as.network(trump.mat, directed = FALSE, loops = FALSE)
+
+#Turn into igraph object
+trump.ig <- graph_from_data_frame(trump, directed = FALSE, vertices = NULL)
+```
+
+#Creating a dataframe
+
+This data frame will make analysis easier. I will be able to directly look at nodes and observe their degree, eigenvector scores, and betweeness.
+
+```{r}
+nodes <- data.frame(name = V(trump.ig)$name, degree = igraph::degree(trump.ig))
+```
+
+```{r}
+nodes <- nodes %>% 
+  mutate(
+    eigenvector = centr_eigen(trump.ig, directed = FALSE)$vector,
+    betweenness = igraph::betweenness(trump.ig, directed = FALSE),
+
+  )
+
+#Remove any duplicated names so it can be joined with df with entity types
+nodes <- nodes[!duplicated(nodes),]
+
+```
+
+Here I am trying to get all the names of the entries, have their entity type, then combine it with trump.nodes so I can have each nodes entity type along with other information.
+
+```{r}
+df.ex <- data.frame(trump$entity_a, trump$entity_a_type)
+
+df.ex <- df.ex[!duplicated(df.ex),]
+
+df.ex <- df.ex %>% 
+  rename(
+    'name' = trump.entity_a,
+    'entity_type' = trump.entity_a_type
+  )
+
+
+#SUCCESS
+trump.nodes <- inner_join(df.ex, nodes, by = "name")
+
+head(trump.nodes)
+  
+```
+
+As the eigenvector value measures popularity and status, betweenness measures the power in the network. In both instances, Donald Trump is clearly the top node, but betweenness and eigenvector have pretty different structures depending on how you look at the network. 
+
+Wilbur Ross, Jared Kushner, Steve Mnuchin, and the Mar-a-Lago Club are the most powerful nodes after Trump with betweenness as a measure of power. This changes when using eigenvector as a measure of popularity as DJT Holdings, Donald Trump Jr. Donald J. Trump for President Inc., and Eric Trump are the most popular nodes after Donald Trump.
+
+With a network such as this, the number of degrees does not matter nearly as much as the the popularity and power a node has. With the political elite it really is all about who you know.
+
+
+
+
+#Network structure
+
+The basic structure of the network is 2669 vertices/nodes with 3380 edges/connections between those nodes. The network has unweighted edges and is not a bipartite network. The edges in the network are undirected because business and familial ties in the network represent mutual relationships. 
+
+
+```{r}
+vcount(trump.ig)
+
+ecount(trump.ig)
+
+is_weighted(trump.ig)
+
+is_bipartite(trump.ig)
+
+is.directed(trump.ig)
+
+```
+
+Since the graph is undirected, a dyad and triad census will not provide much insight into the types of connections in the network.  A majority of the pairs in the network have no connection between them which may indicate the network is not densely connected.
+```{r}
+igraph::dyad.census(trump.ig)
+```
+The triad census shows a vast majority of subgraphs of three vertices are empty with no connection. The second most is a graph with a mutual connection between two vertices. These numbers make sense with a non-dense network. Only 580 times is a subgraph of three vertices fully connected with one another, which means there are subgroups of highly connected nodes in the network. In the network there are 334543 subgraphs of groups where node B is the has mutual connections with nodes A and C, but A and C are not connected with one another in any way.
+```{r}
+igraph::triad.census(trump.ig)
+```
+
+This chart displays the type of ties in the network that with more than 10 occurrences. The most common is ownership, so an example would be an individual who owns an organization and that is the tie between those two nodes.
+```{r}
+table(trump$tie_connection)[table(trump$tie_connection)> 10] 
+```
+#Transitivity
+
+```{r}
+transitivity(trump.ig, type = "undirected")
+```
+
+
+```{r}
+transitivity(trump.ig, type = "localaverage")
+```
+
+#Network Density
+
+This is not a dense network at all. 
+
+```{r}
+igraph::graph.density(trump.ig)
+```
+
+#Components and network diameter
+
+So it looks like there is only one giant component with 2669 members in it. This appears to show the entire network is one large component.
+```{r}
+igraph::components(trump.ig)$no
+```
+
+Number of members of components
+```{r}
+igraph::components(trump.ig)$csize
+```
+
+The diameter of the graph measures the length of the longest geodesic, in this case, since the network is only one large component, the longest geodesic is 13.
+```{r}
+igraph::diameter(trump.ig, directed = F)
+```
+
+
+
+#Average Node Degree
+
+Each node has an average of 2.5 degrees, but the distribution of degrees is skewed tremendously with 99% possessing a degree of 2.
+```{r}
+degree.ig <- igraph::degree(trump.ig)
+avg_degree <- mean(degree.ig)
+
+avg_degree
+```
+
+```{r}
+hist(trump.nodes$degree, main = "Distribution of degrees among nodes")
+```
+
+#Geodesic distance examples of nodes with top degrees and low degrees.
+
+This section demonstrates the number of walks to Donald Trump from members you would expect have a direct line to him, but also with nodes that have very little degrees. 
+
+There are some notable public figures in the network, but they may only have one connection within the network. Bill Belichick for example is only two walks to Trump and they are linked through the Mar-a-Lago Club. There are countless examples of nodes in the network with only 1-2 degrees, but one of them is with Mar-a-Lago noting them as a member of the club.
+```{r}
+distances(trump.ig, "DONALD J. TRUMP", "BILL BELICHICK", weights = NA)
+```
+```{r}
+all_shortest_paths(trump.ig, from = "DONALD J. TRUMP", to = "BILL BELICHICK", mode = "all")
+```
+
+The astrologer, Susan Miller only has 1 degree, but that one connection is with the Mar-a-Lago Club that brings her right to Donald Trump.
+```{r}
+distances(trump.ig, "DONALD J. TRUMP", "SUSAN MILLER", weights = NA)
+```
+```{r}
+all_shortest_paths(trump.ig, from = "DONALD J. TRUMP", to = "SUSAN MILLER", mode = "all")
+```
+
+As you would expect certain nodes are directly connected with Trump like his holdings company and close associates like Rupert Murdoch
+```{r}
+distances(trump.ig, "DONALD J. TRUMP", "DJT HOLDINGS LLC", weights = NA)
+```
+```{r}
+distances(trump.ig, "DONALD J. TRUMP", "RUPERT MURDOCH", weights = NA)
+```
+
+Many organizations and firms have a connection with Trump through various entities like 40 Wall Street and DJT Holdings.
+
+```{r}
+all_shortest_paths(trump.ig, from = "DONALD J. TRUMP", to = "BLACKROCK", mode = "all")
+```
+
+In a few cases, Trump has connections to one organization through multiple different people. Cambridge Analytica is associated with Trump through three of the founding members and, additionally, Kellyanne Conway. Through social network analysis I am able to uncover varied connections to the same organization or person that may not be as clear. 
+```{r}
+all_shortest_paths(trump.ig, from = "DONALD J. TRUMP", to = "CAMBRIDGE ANALYTICA", mode = "all")
+```
+
+Further research would benefit from looking at the shortest paths from mid-level actors in the network like Betsy Devos and Stephen Bannon. When you look at the network under this lens, it seems these powerful figures are much more connected than the network density would lead you to believe.
+```{r}
+all_shortest_paths(trump.ig, from = "BETSY DEVOS", to = "STEPHEN BANNON", mode = "all")
+```
+
+An average path length of 3.8 indicates there are some nodes who are connected through even more avenues than observed above.
+```{r}
+average.path.length(trump.ig, directed = F)
+```
+
+
+#Graph top 10 nodes
+
+This graph displays the top 10 nodes in the network to show, even among the top most popular nodes, there is still a huge gap from the first to the second nodes. 
+
+```{r}
+
+trump.nodes$name <- as.factor(trump.nodes$name)
+trump.nodes$entity_type <- as.factor(trump.nodes$entity_type)
+
+trump.nodes %>% 
+  filter(degree > 42) %>% 
+  ggplot(aes(x = name, y = degree, fill = entity_type))+
+  geom_col()+
+  labs(title = "Number of degrees for top 10 nodes", x = "Name", y = "Number of degrees")
+```
+
+
+
+#Structural equivalence
+
+```{r}
+trump.se <- equiv.clust(trump.net, equiv.fun="sedist", method="hamming",mode="graph")
+
+trump.avg.se <- equiv.clust(trump.net, equiv.fun="sedist", cluster.method = "average", method="hamming",mode="graph")
+```
+
+Ok meh that's pretty difficult to get a sense of what's going on. There must be a way to subset this so it's not as messy.
+```{r}
+plot(trump.se, labels = trump.se$glabels)
+rect.hclust(trump.se$cluster, h = 500)
+
+```
+
+
+This graph shows the density of degrees within the network. Most of the nodes only have about 1 degree.
+```{r}
+
+plot(density(igraph::degree(trump.ig)), main = "Density of degrees")
+
+```
+
+```{r}
+table(igraph :: degree(trump.ig) == 1)
+#Possibly eliminate if they have degree of 1 in order to subset. May see more of the less important players in the network
+#
+```
+
+#Visualization
+
+This is a graph of the entire trump network. There are an extreme amount of pendants in the network, especially connected to Donald Trump.
+
+```{r}
+GGally::ggnet2(trump.net,
+               mode = "fruchtermanreingold",
+               node.size = sna::degree(trump.net),
+               edge.size = 0.2,
+               edge.alpha = 0.5,
+               node.color = "blue",
+               node.alpha = 0.5
+              )
+
+```
+
+
+
+
+
+#Community and role structure
+
+I will not be using a blockmodel for this network because they become too difficult to read when implemented on larger networks. I am using the fast and greedy approach to community detection because it works well on large networks. The walk trap method is also implemented to compare which works best. The walk trap method uses random walks to find communities and is typically better with weighted networks so it may not have the best modularity score for the Trump network. According to the fast and greedy approach, there are 66 groups with a modularity score of 0.8. The walk trap has a modularity of 0.75, so not as bad as I initially expected, but with almost double the amount of groups with the fast, greedy approach.
+
+In these groups of nodes, density should be much higher than in the network as a whole. Both would be useful to study because the walk trap will have smaller groups, but the fast, greedy will contain more expansive groups.
+
+The code for looking at all the groups has been commented out to save from scrolling.
+```{r}
+trump.fg <- cluster_fast_greedy(trump.ig)
+
+trump.fg
+
+#igraph::groups(trump.fg)
+
+#membership(trump.fg)
+```
+```{r}
+trump.wt <- walktrap.community(trump.ig)
+
+trump.wt
+
+#igraph::groups(trump.wt)
+```
+
+
+
+
+##CUG test to test network properties
+
+Disclaimer: Due to the size of the network, running any CUG test proves to take way too long and makes analysis difficult to proceed. 
+
+This first test shows whether the Trump network exhibits higher or lower levels of graph transitivity than we would expect, conditioning on the size of the network.
+
+```{r}
+#trans.cug <- cug.test(trump.mat,FUN=gtrans,mode="graph",cmode="size")
+
+plot(trans.cug)
+```
+
+
+#Conclusion and final remarks
+
+As a whole, the entire network is not as well connected as I would have thought. Many of the nodes have a degree of less than five indicating a low number of connections through the node. This network benefits from analysis through eigenvector and betweenness scores because we can look at powerful and popular nodes. The number of degrees can only show so much, but in a political and business network, other metrics make it easier to spot who has control among the other nodes. With a different lens, some nodes with low degrees have high betweenness, making them much more influential in the network than first thought. Through the research I was able to see just how expansive Donald Trump's property and investment organizations were and how many people were connected to Trump through these organizations. 
+
+This project can act as a springboard for additional analysis into Donald Trump’s political and business connections. If there was more time, I would have liked to have a closer look at the types of connections in the network and create graphs that would detail familial or friendship ties. Further analysis would be easier to do with a graph subset into upper level and lower level nodes to see how dense a mid level network would be. It would also be worth having a closer look at the network of business ties under the Trump Organization. If more time was granted, I would have made the network visualization interactive with the ability to select a node and see who it was and what type of entity. It was disappointing CUG tests were too computationally intensive to run on my computer as I think the research would have greatly benefited from a comparison to a random network. 
+
+This project could also benefit from implementation into an R Shiny dashboard, allowing users to select different nodes to see the relationship between. The interactive plot would also fit well into this format. Network analysis benefits greatly from visuals and a next step for me may be to try and fit this project an R Shiny dashboard to better display the relationships between nodes in the network.
+
